@@ -1,9 +1,10 @@
 import os
 from functools import partial
 from typing import Optional, Sequence
-
+import pandas as pd
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import (
     CIFAR10,
@@ -17,7 +18,6 @@ from torchvision.datasets import (
     OxfordIIITPet,
     StanfordCars,
 )
-from PIL import Image
 
 DATASET_DICT = {
     "cifar10": [
@@ -77,26 +77,48 @@ DATASET_DICT = {
 }
 
 class CustomCSVDataset(Dataset):
-    def __init__(self, csv_file, transform=None):
-        self.samples = []
-        self.labels_set = set()
-        with open(csv_file, 'r') as f:
-            for line in f:
-                path, label = line.strip().split(',')
-                self.samples.append((path, label))
-                self.labels_set.add(label)
-        self.label2idx = {label: idx for idx, label in enumerate(sorted(self.labels_set))}
+    def __init__(self, csv_file, root_dir, transform=None, is_test=False):
+        """
+        Args:
+            csv_file (str): Đường dẫn đến file CSV (train.csv, val.csv, hoặc test.csv).
+            root_dir (str): Thư mục gốc chứa ảnh.
+            transform: Các phép biến đổi áp dụng cho ảnh.
+            is_test (bool): Nếu True, bỏ qua nhãn (cho test set).
+        """
+        self.data = pd.read_csv(csv_file)
+        self.root_dir = root_dir
         self.transform = transform
-
+        self.is_test = is_test
+        
+        # Nếu không phải test set, ánh xạ nhãn chuỗi thành số nguyên
+        if not is_test:
+            self.labels = self.data['label'].unique()
+            self.label_to_idx = {label: idx for idx, label in enumerate(sorted(self.labels))}
+        
     def __len__(self):
-        return len(self.samples)
-
+        return len(self.data)
+    
     def __getitem__(self, idx):
-        path, label = self.samples[idx]
-        image = Image.open(path).convert("RGB")
+        # Lấy đường dẫn ảnh
+        img_path = os.path.join(self.root_dir, self.data.iloc[idx]['image_path'])
+        # Đọc ảnh
+        image = Image.open(img_path).convert('RGB')
+        
+        # Áp dụng biến đổi
         if self.transform:
             image = self.transform(image)
-        return image, self.label2idx[label]
+        
+        # Nếu là test set, chỉ trả về ảnh
+        if self.is_test:
+            return image
+        # Nếu là train/val set, trả về ảnh và nhãn
+        label_str = self.data.iloc[idx]['label']
+        label = self.label_to_idx[label_str]
+        return image, label
+    
+    @property
+    def num_classes(self):
+        return len(self.labels) if not self.is_test else None
 
 class DataModule(pl.LightningDataModule):
     def __init__(
@@ -162,15 +184,24 @@ class DataModule(pl.LightningDataModule):
             self.num_classes = num_classes
 
             self.train_dataset_fn = partial(
-                ImageFolder, root=os.path.join(self.root, "train")
+                CustomCSVDataset, 
+                csv_file=os.path.join(self.root, "train.csv"),
+                root_dir=self.root,
+                is_test=False
             )
             self.val_dataset_fn = partial(
-                ImageFolder, root=os.path.join(self.root, "val")
+                CustomCSVDataset, 
+                csv_file=os.path.join(self.root, "val.csv"),
+                root_dir=self.root,
+                is_test=False
             )
             self.test_dataset_fn = partial(
-                ImageFolder, root=os.path.join(self.root, "test")
+                CustomCSVDataset, 
+                csv_file=os.path.join(self.root, "test.csv"),
+                root_dir=self.root,
+                is_test=True
             )
-            print(f"Using custom dataset from {self.root}")
+            print(f"Using custom CSV dataset from {self.root}")
         else:
             try:
                 (

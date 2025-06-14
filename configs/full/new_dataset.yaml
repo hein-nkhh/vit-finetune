@@ -1,28 +1,36 @@
+# pytorch_lightning==2.0.2
 trainer:
   accelerator: gpu
   devices: 1
   precision: 16-mixed
-  max_steps: 2000
-  val_check_interval: 200
-
+  logger:
+    class_path: pytorch_lightning.loggers.CSVLogger
+    init_args:
+      save_dir: output
+      name: ent_medical
+  max_steps: 5000  # Tăng nếu dữ liệu lớn
+  val_check_interval: 100  # Kiểm tra thường xuyên hơn
 model:
   model_name: vit-b16-224-in21k
-  training_mode: full
+  training_mode: full  # Thử lora nếu dữ liệu nhỏ
   optimizer: sgd
-  lr: 0.01
+  lr: 0.001  # Giảm để ổn định trên ảnh y khoa
   momentum: 0.9
-  weight_decay: 0.0
+  weight_decay: 0.0001  # Thêm để tránh overfitting
   scheduler: cosine
-  warmup_steps: 200
-
+  warmup_steps: 500  # Tăng warmup để ổn định
 data:
   dataset: custom
-  root: '/kaggle/input/train-val-test-csv-original'     # 🟡 Đường dẫn chứa train/val/test
-  num_classes: 6                   # 🟡 Số class bạn có (đếm từ label JSON)
+  root: /kaggle/input/train-val-test-csv-original
   size: 224
-  batch_size: 128
+  batch_size: 64  # Giảm để an toàn với GPU
   workers: 4
-
+  num_classes: 3  # Ví dụ: 3 lớp (normal, infection, tumor)
+  min_scale: 0.5  # Tăng để giữ chi tiết ảnh y khoa
+  flip_prob: 0.5
+  rand_aug_n: 2  # Thêm augmentation nhẹ
+  rand_aug_m: 7
+  erase_prob: 0.25  # Thêm random erasing để tăng robustness
 model_checkpoint:
   filename: best-step-{step}-{val_acc:.4f}
   monitor: val_acc
