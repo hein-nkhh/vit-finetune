@@ -3,7 +3,7 @@ from functools import partial
 from typing import Optional, Sequence
 
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import (
     CIFAR10,
@@ -17,6 +17,7 @@ from torchvision.datasets import (
     OxfordIIITPet,
     StanfordCars,
 )
+from PIL import Image
 
 DATASET_DICT = {
     "cifar10": [
@@ -75,6 +76,27 @@ DATASET_DICT = {
     ],
 }
 
+class CustomCSVDataset(Dataset):
+    def __init__(self, csv_file, transform=None):
+        self.samples = []
+        self.labels_set = set()
+        with open(csv_file, 'r') as f:
+            for line in f:
+                path, label = line.strip().split(',')
+                self.samples.append((path, label))
+                self.labels_set.add(label)
+        self.label2idx = {label: idx for idx, label in enumerate(sorted(self.labels_set))}
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        path, label = self.samples[idx]
+        image = Image.open(path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
+        return image, self.label2idx[label]
 
 class DataModule(pl.LightningDataModule):
     def __init__(
